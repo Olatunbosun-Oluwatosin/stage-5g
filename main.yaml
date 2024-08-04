@@ -15,7 +15,7 @@
     postgres_db: "database"
     postgres_admin_user: "admin"
     postgres_admin_password: "passwd"
-    
+
   tasks:
     - name: Configure Git safe directory as root
       command: git config --global --add safe.directory /opt/stage_5b
@@ -27,6 +27,41 @@
         version: "{{ git_branch }}"
         force: yes
         update: yes
+
+    - name: Check if sudo group exist
+      command: getent group sudo
+      register: sudo_group
+      ignore_errors: true
+
+    - name: If no, create sudo group
+      group:
+        name: sudo
+        state: present
+      when: sudo_group.rc != 0
+
+    - name: Ensure sudo group has sudo privileges
+      lineinfile:
+        path: /etc/sudoers
+        state: present
+        regexp: "^%sudo"
+        line: "%sudo ALL=(ALL:ALL) ALL"
+        validate: "/usr/sbin/visudo -cf %s"
+
+    - name: Create deploy_user
+      user:
+        name: "{{ deploy_user }}"
+        groups: sudo
+        append: yes
+        state: present
+        shell: /bin/bash
+
+    - name: Grant deploy_user sudo privileges without password
+      lineinfile:
+        path: /etc/sudoers
+        state: present
+        regexp: "^{{ deploy_user }}"
+        line: "{{ deploy_user }} ALL=(ALL) NOPASSWD:ALL"
+        validate: "/usr/sbin/visudo -cf %s"
 
     - name: Install system dependencies
       apt:
@@ -174,7 +209,7 @@
         owner: root
         group: root
         mode: '0600'
-        
+
     - name: Start the application
       shell: nohup php artisan serve --host=127.0.0.1 --port=3000 > "{{ log_dir }}/app.log" 2>&1 &
       args:
